@@ -83,6 +83,7 @@ uint64 sys_sched_yield()
 	return 0;
 }
 
+#if 0
 uint64 sys_gettimeofday(uint64 val, int _tz)
 {
 	struct proc *p = curr_proc();
@@ -93,6 +94,23 @@ uint64 sys_gettimeofday(uint64 val, int _tz)
 	copyout(p->pagetable, val, (char *)&t, sizeof(TimeVal));
 	return 0;
 }
+#else
+uint64 sys_gettimeofday(uint64 val_va, int _tz)
+{
+	struct proc *p = curr_proc();
+	TimeVal val;
+	uint64 cycle = get_cycle();
+
+	val.sec = cycle / CPU_FREQ;
+	val.usec = (cycle % CPU_FREQ) * 1000000 / CPU_FREQ;
+
+	if (copyout(p->pagetable, val_va, (char *)&val,
+			sizeof(TimeVal)) < 0)
+		return -1;
+
+	return 0;
+}
+#endif
 
 uint64 sys_getpid()
 {
@@ -206,6 +224,96 @@ uint64 sys_sbrk(int n)
 	return addr;
 }
 
+int sys_mmap(uint64 start, uint64 len, int prot, int flags)
+{
+	struct proc *p = curr_proc();
+
+	if (start % PGSIZE != 0)
+		return -1;
+
+	if ((prot & ~0x7) != 0)
+		return -1;
+	if ((prot & 0x7) == 0)
+		return -1;
+
+	if (len == 0)
+		return 0;
+
+	uint64 end = PGROUNDUP(start + len);
+	for (uint64 va = start; va < end; va += PGSIZE) {
+		pte_t *pte = walk(p->pagetable, va, 0);
+		if (pte != 0 && (*pte & PTE_V))
+			return -1;
+	}
+#if 0
+	int xperm = 0;
+
+	if (prot & 0x2)
+		xperm |= PTE_W;
+	if (prot & 0x4)
+		xperm |= PTE_X;
+
+	if (uvmalloc(p->pagetable, start, end, xperm) == 0)
+		return -1;
+#else // #if 0
+	/*
+	 * Manual page allocation and mapping loop.
+	 * Unlike uvmalloc(), this gives us precise control
+	 * over permission bits to match the exact prot
+	 * flags specified by the user. We allocate physical
+	 * pages one by one, zero them for security,
+	 * set only the requested permission bits (crucial
+	 * for RISC-V compliance where PTE_W=1,PTE_R=0 is
+	 * illegal), and install the mapping via mappages().
+	 */
+	for (uint64 va = start; va < end; va += PGSIZE) {
+		char *pa = kalloc();
+		int pte_flags = PTE_V | PTE_U;
+
+		if (!pa)
+			return -1;
+
+		memset(pa, 0, PGSIZE);
+
+		if (prot & 0x1)
+			pte_flags |= PTE_R;
+		if (prot & 0x2)
+			pte_flags |= PTE_W;
+		if (prot & 0x4)
+			pte_flags |= PTE_X;
+
+		if (mappages(p->pagetable, va, PGSIZE, (uint64)pa, pte_flags) != 0) {
+			kfree(pa);
+			return -1;
+		}
+	}
+#endif // #if 0
+
+	return 0;
+}
+
+int sys_munmap(uint64 start, uint64 len)
+{
+	struct proc *p = curr_proc();
+
+	if (start % PGSIZE != 0)
+		return -1;
+
+	if (len == 0)
+		return 0;
+
+	uint64 end = PGROUNDUP(start + len);
+	for (uint64 va = start; va < end; va += PGSIZE) {
+		pte_t *pte = walk(p->pagetable, va, 0);
+		if (pte == 0 || (*pte & PTE_V) == 0)
+			return -1;
+	}
+
+	uvmunmap(p->pagetable, start, (end - start) / PGSIZE, 1);
+
+	return 0;
+}
+
 extern char trap_page[];
 
 void syscall()
@@ -267,6 +375,12 @@ void syscall()
 		break;
 	case SYS_sbrk:
 		ret = sys_sbrk(args[0]);
+		break;
+	case SYS_mmap:
+		ret = sys_mmap(args[0], args[1], args[2], args[3]);
+		break;
+	case SYS_munmap:
+		ret = sys_munmap(args[0], args[1]);
 		break;
 	default:
 		ret = -1;
