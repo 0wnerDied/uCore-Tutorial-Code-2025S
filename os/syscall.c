@@ -99,6 +99,16 @@ int sys_trace(int trace_request, uint64 id, uint8 data)
 	pte_t *pte = walk(p->pagetable, id, 0);
 	uint8 val;
 
+#ifdef LAZY_ALLOCATION
+	if (pte != 0 && (*pte & PTE_V) == 0 && (*pte & PTE_LAZY)) {
+		if (handle_lazy_fault(p->pagetable, id) == 0) {
+			pte = walk(p->pagetable, id, 0);
+			if (pte == 0)
+				goto err;
+		}
+	}
+#endif
+
 	if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
 		goto err;
 
@@ -143,7 +153,11 @@ int sys_mmap(uint64 start, uint64 len, int prot, int flags)
 	uint64 end = PGROUNDUP(start + len);
 	for (uint64 va = start; va < end; va += PGSIZE) {
 		pte_t *pte = walk(p->pagetable, va, 0);
+#ifdef LAZY_ALLOCATION
+		if (pte != 0 && ((*pte & PTE_V) || (*pte & PTE_LAZY)))
+#else
 		if (pte != 0 && (*pte & PTE_V))
+#endif
 			return -1;
 	}
 #if 0
@@ -157,6 +171,19 @@ int sys_mmap(uint64 start, uint64 len, int prot, int flags)
 	if (uvmalloc(p->pagetable, start, end, xperm) == 0)
 		return -1;
 #else // #if 0
+#ifdef LAZY_ALLOCATION
+	int pte_flags = PTE_U;
+
+	if (prot & 0x1)
+		pte_flags |= PTE_R;
+	if (prot & 0x2)
+		pte_flags |= PTE_W;
+	if (prot & 0x4)
+		pte_flags |= PTE_X;
+
+	if (mappages(p->pagetable, start, end - start, 0, pte_flags) != 0)
+		return -1;
+#else // #ifdef LAZY_ALLOCATION
 	/*
 	 * Manual page allocation and mapping loop.
 	 * Unlike uvmalloc(), this gives us precise control
@@ -188,6 +215,7 @@ int sys_mmap(uint64 start, uint64 len, int prot, int flags)
 			return -1;
 		}
 	}
+#endif // #ifdef LAZY_ALLOCATION
 #endif // #if 0
 
 	return 0;
@@ -206,7 +234,11 @@ int sys_munmap(uint64 start, uint64 len)
 	uint64 end = PGROUNDUP(start + len);
 	for (uint64 va = start; va < end; va += PGSIZE) {
 		pte_t *pte = walk(p->pagetable, va, 0);
+#ifdef LAZY_ALLOCATION
+		if (pte == 0 || ((*pte & PTE_V) == 0 && (*pte & PTE_LAZY) == 0))
+#else
 		if (pte == 0 || (*pte & PTE_V) == 0)
+#endif
 			return -1;
 	}
 

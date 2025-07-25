@@ -65,6 +65,38 @@ pte_t *walk(pagetable_t pagetable, uint64 va, int alloc)
 	return &pagetable[PX(0, va)];
 }
 
+#ifdef LAZY_ALLOCATION
+/*
+ * Handle page fault for lazy allocated pages.
+ * Allocate physical page when process first
+ * accesses lazy allocated memory region.
+ */
+int handle_lazy_fault(pagetable_t pagetable, uint64 va)
+{
+	char *mem;
+	pte_t *pte;
+
+	va = PGROUNDDOWN(va);
+
+	if ((pte = walk(pagetable, va, 0)) == 0)
+		return -1;
+
+	if ((*pte & PTE_LAZY) == 0)
+		return -1;
+
+	mem = kalloc();
+	if (mem == 0)
+		return -1;
+
+	memset(mem, 0, PGSIZE);
+
+	uint64 perm = PTE_FLAGS(*pte) & ~PTE_LAZY;
+	*pte = PA2PTE(mem) | perm | PTE_V;
+
+	return 0;
+}
+#endif
+
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
@@ -79,6 +111,12 @@ uint64 walkaddr(pagetable_t pagetable, uint64 va)
 	pte = walk(pagetable, va, 0);
 	if (pte == 0)
 		return 0;
+#ifdef LAZY_ALLOCATION
+	// Check if page is lazy allocated and handle fault
+	if ((*pte & (PTE_V | PTE_LAZY)) == PTE_LAZY &&
+		 !handle_lazy_fault(pagetable, va))
+		pte = walk(pagetable, va, 0);
+#endif
 	if ((*pte & PTE_V) == 0)
 		return 0;
 	if ((*pte & PTE_U) == 0)
@@ -123,11 +161,24 @@ int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 			errorf("remap");
 			return -1;
 		}
+#ifdef LAZY_ALLOCATION
+		// Create lazy PTE when pa is 0, otherwise normal mapping
+		if (pa == 0)
+			*pte = (perm & ~PTE_V) | PTE_LAZY;
+		else
+			*pte = PA2PTE(pa) | perm | PTE_V;
+#else
 		*pte = PA2PTE(pa) | perm | PTE_V;
+#endif
 		if (a == last)
 			break;
 		a += PGSIZE;
+#ifdef LAZY_ALLOCATION
+		if (pa != 0)
+			pa += PGSIZE;
+#else
 		pa += PGSIZE;
+#endif
 	}
 	return 0;
 }
@@ -300,27 +351,38 @@ int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 uint64 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
-        char *mem;
-        uint64 a;
+#ifndef LAZY_ALLOCATION
+	char *mem;
+	uint64 a;
+#endif
 
-        if(newsz < oldsz)
-                return oldsz;
+	if (newsz < oldsz)
+		return oldsz;
 
-        oldsz = PGROUNDUP(oldsz);
-        for(a = oldsz; a < newsz; a += PGSIZE){
-                mem = kalloc();
-                if(mem == 0){
-                        uvmdealloc(pagetable, a, oldsz);
-                        return 0;
-                }
-                memset(mem, 0, PGSIZE);
-                if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
-                        kfree(mem);
-                        uvmdealloc(pagetable, a, oldsz);
-                        return 0;
-                }
-        }
-        return newsz;
+	oldsz = PGROUNDUP(oldsz);
+#ifdef LAZY_ALLOCATION
+	// create lazy PTEs without physical pages
+	if (mappages(pagetable, oldsz, newsz - oldsz, 0,
+		 PTE_R | PTE_U | xperm) != 0)
+		return 0;
+#else
+	for(a = oldsz; a < newsz; a += PGSIZE) {
+		mem = kalloc();
+		if (mem == 0) {
+			uvmdealloc(pagetable, a, oldsz);
+			return 0;
+		}
+		memset(mem, 0, PGSIZE);
+		if (mappages(pagetable, a, PGSIZE, (uint64)mem,
+			 PTE_R | PTE_U | xperm) != 0) {
+			kfree(mem);
+			uvmdealloc(pagetable, a, oldsz);
+			return 0;
+		}
+	}
+#endif
+
+	return newsz;
 }
 
 // Deallocate user pages to bring the process size from oldsz to
@@ -329,14 +391,14 @@ uint64 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 // process size.  Returns the new process size.
 uint64 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
-        if(newsz >= oldsz)
-                return oldsz;
+	if (newsz >= oldsz)
+		return oldsz;
 
-        if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
-                int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
-                uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
-        }
+	if (PGROUNDUP(newsz) < PGROUNDUP(oldsz)) {
+		int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+		uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
+	}
 
-        return newsz;
+	return newsz;
 }
 

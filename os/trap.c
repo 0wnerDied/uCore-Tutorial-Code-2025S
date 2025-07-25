@@ -70,16 +70,25 @@ void usertrap()
 			syscall();
 			break;
 		case StoreMisaligned:
-                case StorePageFault:
-                case InstructionMisaligned:
-                case InstructionPageFault:
-                case LoadMisaligned:
-                case LoadPageFault:
-                        errorf("%d in application, bad addr = %p, bad instruction = %p, "
-                               "core dumped.",
-                               cause, r_stval(), trapframe->epc);
-                        exit(-2);
-                        break;
+		case StorePageFault:
+		case InstructionMisaligned:
+		case InstructionPageFault:
+		case LoadMisaligned:
+		case LoadPageFault:
+#ifdef LAZY_ALLOCATION
+		{
+			// Handle lazy allocation page faults
+			uint64 va = r_stval();
+			struct proc *p = curr_proc();
+
+			if (handle_lazy_fault(p->pagetable, va) == 0)
+				break;
+		}
+#endif
+			errorf("%d in application, bad addr = %p, bad instruction = %p, "
+				"core dumped.", cause, r_stval(), trapframe->epc);
+			exit(-2);
+			break;
 		case IllegalInstruction:
 			errorf("IllegalInstruction in application, core dumped.");
 			exit(-3);

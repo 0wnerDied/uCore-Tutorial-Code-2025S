@@ -33,4 +33,6 @@ enum {
 
 #define MAX_STR_LEN (200)
 
+#define LAZY_ALLOCATION 1
+
 #endif // CONST_H
