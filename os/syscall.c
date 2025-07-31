@@ -289,6 +289,10 @@ int sys_mmap(uint64 start, uint64 len, int prot, int flags)
 	}
 #endif // #if 0
 
+	uint64 end_page = end / PGSIZE;
+	if (end_page > p->max_page)
+		p->max_page = end_page;
+
 	return 0;
 }
 
@@ -310,6 +314,16 @@ int sys_munmap(uint64 start, uint64 len)
 	}
 
 	uvmunmap(p->pagetable, start, (end - start) / PGSIZE, 1);
+
+	for (uint64 pg = p->max_page; pg > 0; pg--) {
+		uint64 va  = (pg - 1) * PGSIZE;
+		pte_t *pte = walk(p->pagetable, va, 0);
+		if (pte && (*pte & PTE_V)) {
+			p->max_page = pg;
+			return 0;
+		}
+	}
+	p->max_page = 0;
 
 	return 0;
 }
