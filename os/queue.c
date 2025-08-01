@@ -1,3 +1,4 @@
+#if 0
 #include "queue.h"
 #include "defs.h"
 
@@ -27,3 +28,4 @@ int pop_queue(struct queue *q)
 		q->empty = 1;
 	return value;
 }
+#endif

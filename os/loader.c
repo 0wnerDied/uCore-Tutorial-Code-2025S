@@ -66,6 +66,6 @@ int load_init_app()
 	argv[0] = INIT_PROC;
 	argv[1] = NULL;
 	p->trapframe->a0 = push_argv(p, argv);
-	add_task(p);
+	// add_task(p);
 	return 0;
 }
