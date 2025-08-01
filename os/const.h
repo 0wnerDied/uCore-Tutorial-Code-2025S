@@ -35,4 +35,8 @@ enum {
 #define MAX_STR_LEN (200)
 #define IDLE_PID (0)
 
+// scheduler algo
+#define BIG_STRIDE 65536
+#define DEFAULT_PRIO 16
+
 #endif // CONST_H
