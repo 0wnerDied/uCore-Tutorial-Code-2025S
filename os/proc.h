@@ -62,6 +62,7 @@ int wait(int, int *);
 void add_task(struct proc *);
 struct proc *pop_task();
 struct proc *allocproc();
+void freeproc(struct proc *p);
 int fdalloc(struct file *);
 int init_stdio(struct proc *);
 int push_argv(struct proc *, char **);
