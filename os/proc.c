@@ -199,8 +199,7 @@ void scheduler()
 			swtch(&idle.context, &p->context);
 			current_proc = &idle;
 		} else
-			// No runnable processes, wait for interrupt
-			asm volatile("wfi");
+			panic("all app are over!\n");
 	}
 }
 #endif
