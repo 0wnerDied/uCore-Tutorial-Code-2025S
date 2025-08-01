@@ -149,7 +149,7 @@ uint64 sys_spawn(uint64 va)
 		return -1;
 	}
 
-	add_task(np);
+	// add_task(np);
 
 	return np->pid;
 }

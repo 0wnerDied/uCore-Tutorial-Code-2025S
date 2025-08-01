@@ -63,7 +63,6 @@ int fork();
 int exec(char *);
 int wait(int, int *);
 void add_task(struct proc *);
-struct proc *pop_task();
 struct proc *allocproc();
 void freeproc(struct proc *p);
 int fdalloc(struct file *);

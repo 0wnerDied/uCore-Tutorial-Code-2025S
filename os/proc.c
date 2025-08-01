@@ -3,7 +3,7 @@
 #include "loader.h"
 #include "trap.h"
 #include "vm.h"
-#include "queue.h"
+//#include "queue.h"
 
 struct proc pool[NPROC];
 __attribute__((aligned(16))) char kstack[NPROC][PAGE_SIZE];
@@ -12,7 +12,7 @@ __attribute__((aligned(4096))) char trapframe[NPROC][TRAP_PAGE_SIZE];
 extern char boot_stack_top[];
 struct proc *current_proc;
 struct proc idle;
-struct queue task_queue;
+//struct queue task_queue;
 
 int threadid()
 {
@@ -36,7 +36,7 @@ void proc_init()
 	idle.kstack = (uint64)boot_stack_top;
 	idle.pid = IDLE_PID;
 	current_proc = &idle;
-	init_queue(&task_queue);
+	// init_queue(&task_queue);
 }
 
 int allocpid()
@@ -45,6 +45,12 @@ int allocpid()
 	return PID++;
 }
 
+/*
+ * The fetch_task and add_task function is no longer
+ * needed with the stride scheduler, as the scheduler
+ * now iterates through the process pool directly.
+ */
+#if 0
 struct proc *fetch_task()
 {
 	int index = pop_queue(&task_queue);
@@ -58,9 +64,10 @@ struct proc *fetch_task()
 
 void add_task(struct proc *p)
 {
-	push_queue(&task_queue, p - pool);
-	debugf("add task %d(pid=%d) to task queue\n", p - pool, p->pid);
+	// push_queue(&task_queue, p - pool);
+	// debugf("add task %d(pid=%d) to task queue\n", p - pool, p->pid);
 }
+#endif
 
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel.
@@ -184,7 +191,7 @@ void sched()
 void yield()
 {
 	current_proc->state = RUNNABLE;
-	add_task(current_proc);
+	// add_task(current_proc);
 	sched();
 }
 
@@ -227,7 +234,7 @@ int fork()
 	np->priority = p->priority;
 	np->pass = p->pass;
 	np->state = RUNNABLE;
-	add_task(np);
+	// add_task(np);
 	return np->pid;
 }
 
@@ -269,7 +276,7 @@ int wait(int pid, int *code)
 			return -1;
 		}
 		p->state = RUNNABLE;
-		add_task(p);
+		// add_task(p);
 		sched();
 	}
 }
