@@ -156,6 +156,21 @@ void scheduler()
 		}
 
 		if (nxt_proc) {
+			/*
+			 * To prevent stride overflow, subtract the minimum
+			 * stride from all runnable processes. This keeps the
+			 * relative order and prevents the stride values from
+			 * growing indefinitely.
+			 */
+			uint64 min_stride = nxt_proc->stride;
+			if (min_stride > 0) {
+				for (p = pool; p < &pool[NPROC]; p++) {
+					if (p->state == RUNNABLE) {
+						p->stride -= min_stride;
+					}
+				}
+			}
+
 			p = nxt_proc;
 			p->state = RUNNING;
 			current_proc = p;
