@@ -28,4 +28,8 @@
 #define IDLE_PID (0)
 #define MAX_ARG_NUM (32) // max exec arguments
 
+// scheduler algo
+#define BIG_STRIDE 65536
+#define DEFAULT_PRIO 16
+
 #endif // CONST_H

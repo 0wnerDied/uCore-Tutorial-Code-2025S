@@ -47,6 +47,9 @@ struct proc {
 		[FD_BUFFER_SIZE]; //File descriptor table, using to record the files opened by the process
 	uint64 program_brk;
 	uint64 heap_bottom;
+	uint64 stride;
+	int priority;
+	uint64 pass;
 };
 
 int cpuid();

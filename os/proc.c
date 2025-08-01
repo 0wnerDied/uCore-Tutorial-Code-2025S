@@ -91,7 +91,10 @@ found:
 	p->exit_code = 0;
 	p->pagetable = uvmcreate((uint64)p->trapframe);
 	p->program_brk = 0;
-        p->heap_bottom = 0;
+	p->heap_bottom = 0;
+	p->stride = 0;
+	p->priority = DEFAULT_PRIO;
+	p->pass = BIG_STRIDE / p->priority;
 	memset(&p->context, 0, sizeof(p->context));
 	memset((void *)p->kstack, 0, KSTACK_SIZE);
 	memset((void *)p->trapframe, 0, TRAP_PAGE_SIZE);
@@ -117,6 +120,7 @@ int init_stdio(struct proc *p)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+#if 0
 void scheduler()
 {
 	struct proc *p;
@@ -144,6 +148,40 @@ void scheduler()
 		swtch(&idle.context, &p->context);
 	}
 }
+#else
+void scheduler()
+{
+	struct proc *p;
+	struct proc *nxt_proc;
+
+	for (;;) {
+		/*
+		 * Find the process with the smallest stride
+		 */
+		nxt_proc = 0;
+		for (p = pool; p < &pool[NPROC]; p++) {
+			if (p->state == RUNNABLE) {
+				if (nxt_proc == 0 || p->stride < nxt_proc->stride)
+					nxt_proc = p;
+			}
+		}
+
+		if (nxt_proc) {
+			p = nxt_proc;
+			p->state = RUNNING;
+			current_proc = p;
+
+			if (p->priority > 0)
+				p->stride += p->pass;
+
+			swtch(&idle.context, &p->context);
+			current_proc = &idle;
+		} else
+			// No runnable processes, wait for interrupt
+			asm volatile("wfi");
+	}
+}
+#endif
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
@@ -217,6 +255,9 @@ int fork()
 	// Cause fork to return 0 in the child.
 	np->trapframe->a0 = 0;
 	np->parent = p;
+	np->stride = p->stride;
+	np->priority = p->priority;
+	np->pass = p->pass;
 	np->state = RUNNABLE;
 	add_task(np);
 	return np->pid;
