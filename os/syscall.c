@@ -110,10 +110,48 @@ uint64 sys_wait(int pid, uint64 va)
 	return wait(pid, code);
 }
 
+/*
+ * sys_spawn - Create a new process and execute a program.
+ * @va: User-space virtual address of the filename to execute.
+ *
+ * Creates a new process in a single step, avoiding the overhead of
+ * fork-then-exec. This is more efficient as it does not copy the
+ * parent's address space.
+ *
+ * Returns:
+ * The new process's PID on success.
+ * -1 on error (e.g., invalid filename, out of memory, or process limit reached).
+ */
 uint64 sys_spawn(uint64 va)
 {
-	// TODO: your job is to complete the sys call
-	return -1;
+	struct proc *p = curr_proc();
+	char name[MAX_STR_LEN];
+	struct proc *np;
+	int id;
+
+	/*
+	 * Copy the filename from user space to kernel space.
+	 */
+	if (copyinstr(p->pagetable, name, va, MAX_STR_LEN) < 0)
+		return -1;
+
+	id = get_id_by_name(name);
+	if (id < 0)
+		return -1;
+
+	if ((np = allocproc()) == 0)
+		return -1;
+
+	np->parent = p;
+
+	if (loader(id, np) < 0) {
+		freeproc(np);
+		return -1;
+	}
+
+	add_task(np);
+
+	return np->pid;
 }
 
 uint64 sys_set_priority(long long prio){
