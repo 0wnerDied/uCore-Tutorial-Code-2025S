@@ -351,10 +351,63 @@ fail:
 	return -1;
 }
 
+/*
+ * @name:   The path of the link to remove.
+ *
+ * Removes a link from a directory.
+ * It finds the parent directory and
+ * the target inode. If the target is
+ * a non-empty directory, it fails.
+ * The directory entry is then cleared.
+ * Finally, it decrements the inode's
+ * link count. If the link count
+ * drops to zero, the inode and its
+ * data blocks are freed by iput.
+ *
+ * Returns 0 on success, -1 on error.
+ */
 int sys_unlinkat(int dirfd, uint64 name, uint64 flags)
 {
-	//TODO: your job is to complete the syscall
-	return -1;
+	char path[MAXPATH], *filename;
+	struct proc *p = curr_proc();
+	struct inode *dp, *ip;
+	uint off;
+
+	if (copyinstr(p->pagetable, path, name, MAXPATH) < 0)
+		return -1;
+
+	for (filename = path + strlen(path) - 1;
+		 filename >= path && *filename != '/'; filename--);
+	filename++;
+
+	if ((dp = nameiparent(path)) == 0)
+		return -1;
+
+	if ((ip = dirlookup(dp, filename, &off)) == 0) {
+		iput(dp);
+		return -1;
+	}
+
+	ivalid(ip);
+
+	if (ip->type == T_DIR && !isdirempty(ip)) {
+		iput(dp);
+		iput(ip);
+		return -1;
+	}
+
+	if (dirunlink(dp, off) != 0) {
+		iput(dp);
+		iput(ip);
+		return -1;
+	}
+
+	ip->nlink--;
+	iupdate(ip);
+	iput(dp);
+	iput(ip);
+
+	return 0;
 }
 
 uint64 sys_sbrk(int n)

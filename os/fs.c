@@ -488,3 +488,57 @@ struct inode *nameiparent(char *path)
 
 	return ip;
 }
+
+/*
+ * @dp:   The directory inode to modify.
+ * @off:  Offset of the entry to remove.
+ *
+ * Removes a directory entry by zeroing it.
+ * It first reads the entry to ensure
+ * it is a valid, non-empty one.
+ * Then it overwrites the entry with
+ * zeros, effectively unlinking it.
+ *
+ * Returns 0 on success, panics on error.
+ */
+int dirunlink(struct inode *dp, uint off)
+{
+	struct dirent de;
+
+	if (readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+		panic("dirunlink: read");
+	if (de.inum == 0)
+		panic("dirunlink: trying to unlink empty entry");
+
+	memset(&de, 0, sizeof(de));
+	if (writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+		panic("dirunlink: writei");
+
+	return 0;
+}
+
+/**
+ * @dp: The directory inode to check.
+ *
+ * Iterates through directory entries.
+ * It checks for any valid entries
+ * other than "." and "..". The loop
+ * starts after the first two entries.
+ *
+ * Returns 1 if empty, 0 otherwise.
+ */
+int isdirempty(struct inode *dp)
+{
+	struct dirent de;
+
+	// Iterate through directory entries. 
+	// Skip the first two entries, "." and "..".
+	for (uint off = 2 * sizeof(de); off < dp->size; off += sizeof(de)) {
+		if (readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+			panic("isdirempty: readi");
+		if (de.inum != 0)
+			return 0;
+	}
+
+	return 1;
+}
