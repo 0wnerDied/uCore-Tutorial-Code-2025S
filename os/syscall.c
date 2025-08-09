@@ -287,10 +287,67 @@ int sys_fstat(int fd, uint64 stat)
 	return 0;
 }
 
+/*
+ * @oldpath: The existing file to link.
+ * @newpath: The new link name to create.
+ *
+ * Creates a new hard link to an
+ * existing file. It finds the inode
+ * of the old path. Then it increments
+ * the link count. A new directory entry
+ * is created for the new path. This
+ * entry points to the same inode.
+ * Directories cannot be hard-linked.
+ *
+ * Returns 0 on success, -1 on error.
+ */
 int sys_linkat(int olddirfd, uint64 oldpath, int newdirfd, uint64 newpath,
 	       uint64 flags)
 {
-	//TODO: your job is to complete the syscall
+	char old[MAXPATH], new[MAXPATH], *filename;
+	struct proc *p = curr_proc();
+	struct inode *dp, *ip;
+
+	if (copyinstr(p->pagetable, old, oldpath, MAXPATH) < 0 ||
+		copyinstr(p->pagetable, new, newpath, MAXPATH) < 0)
+		return -1;
+
+	// Can't be linked to itself.
+	if (strncmp(old, new, MAXPATH) == 0)
+		return -1;
+
+	if ((ip = namei(old)) == 0)
+		return -1;
+
+	ivalid(ip);
+
+	if (ip->type == T_DIR) {
+		iput(ip);
+		return -1;
+	}
+
+	ip->nlink++;
+	iupdate(ip);
+
+	if ((dp = nameiparent(new)) == 0)
+		goto fail;
+
+	for (filename = new + strlen(new) - 1;
+		 filename >= new && *filename != '/'; filename--);
+	filename++;
+
+	if (dirlink(dp, new, ip->inum) < 0) {
+		iput(dp);
+		goto fail;
+	}
+	iput(dp);
+	iput(ip);
+
+	return 0;
+fail:
+	ip->nlink--;
+	iupdate(ip);
+	iput(ip);
 	return -1;
 }
 

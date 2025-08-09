@@ -455,3 +455,36 @@ struct inode *namei(char *path)
 		panic("fs dumped.\n");
 	return dirlookup(dp, path + skip, 0);
 }
+
+/*
+ * @path: The full path to resolve.
+ *
+ * Finds the inode of a parent directory.
+ * It parses the given path to find
+ * the last component. Then it returns
+ * the inode of the containing directory.
+ * This is a helper for link and unlink.
+ *
+ * Returns inode of parent, or 0 on error.
+ */
+struct inode *nameiparent(char *path)
+{
+	char *s;
+	struct inode *ip;
+
+	// Find the last slash in the path string.
+	for (s = path + strlen(path) - 1; s >= path && *s != '/'; s--);
+
+	// If no slash, parent is the root directory.
+	if (s < path)
+		return root_dir();
+
+	// Temporarily truncate string at the slash
+    // to get the parent path.
+	*s = 0;
+	ip = namei(path);
+	// Restore the slash.
+	*s = '/';
+
+	return ip;
+}

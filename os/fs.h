@@ -99,6 +99,7 @@ void iunlock(struct inode *);
 void iunlockput(struct inode *);
 void iupdate(struct inode *);
 struct inode *namei(char *);
+struct inode *nameiparent(char *path);
 struct inode *root_dir();
 int readi(struct inode *, int, uint64, uint, uint);
 int writei(struct inode *, int, uint64, uint, uint);
