@@ -248,10 +248,43 @@ uint64 sys_close(int fd)
 	return 0;
 }
 
+/*
+ * sys_fstat - get file status
+ * @fd: The file descriptor to query.
+ * @stat: User-space address for the result.
+ *
+ * Retrieves information about an open file.
+ * It writes the data to a stat
+ * structure in user space. The structure
+ * includes device, inode number, type,
+ * and the number of hard links.
+ *
+ * Returns 0 on success, -1 on error.
+ */
 int sys_fstat(int fd, uint64 stat)
 {
-	//TODO: your job is to complete the syscall
-	return -1;
+	struct proc *p = curr_proc();
+	struct file *f = p->files[fd];
+
+	if (fd < 0 || fd > FD_BUFFER_SIZE || f == NULL)
+		return -1;
+
+	struct stat st;
+
+	st.dev = f->ip->dev;
+	st.ino = f->ip->inum;
+	if (f->ip->type == T_DIR)
+		st.mode = DIR;
+	else if (f->ip->type == T_FILE)
+		st.mode = FILE;
+	else
+		return -1;
+	st.nlink = f->ip->nlink;
+
+	if (copyout(p->pagetable, stat, (char *)&st, sizeof(st)) < 0)
+		return -1;
+
+	return 0;
 }
 
 int sys_linkat(int olddirfd, uint64 oldpath, int newdirfd, uint64 newpath,
