@@ -177,7 +177,7 @@ uint64 sys_spawn(uint64 va)
 	struct proc *p = curr_proc();
 	char name[MAX_STR_LEN];
 	struct proc *np;
-	int id;
+	struct inode *ip;
 
 	/*
 	 * Copy the filename from user space to kernel space.
@@ -185,19 +185,27 @@ uint64 sys_spawn(uint64 va)
 	if (copyinstr(p->pagetable, name, va, MAX_STR_LEN) < 0)
 		return -1;
 
-	id = get_id_by_name(name);
-	if (id < 0)
+	if ((ip = namei(name)) == 0)
 		return -1;
 
-	if ((np = allocproc()) == 0)
+	if ((np = allocproc()) == 0) {
+		iput(ip);
 		return -1;
+	}
+
+	/*
+	 * Initialize standard I/O for the new process.
+	 */
+	init_stdio(np);
 
 	np->parent = p;
 
-	if (loader(id, np) < 0) {
+	if (bin_loader(ip, np) < 0) {
 		freeproc(np);
+		iput(ip);
 		return -1;
 	}
+	iput(ip);
 
 	// add_task(np);
 
