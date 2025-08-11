@@ -335,33 +335,37 @@ int sys_mutex_lock(int mutex_id)
 	struct thread *t = curr_thread();
 	struct mutex *m = &p->mutex_pool[mutex_id];
 
-	if (p->deadlock_detect_enabled) {
-		p->mutex_req[t->tid][mutex_id] = 1;
-		// Check for potential deadlock ONLY if the resource is
-		// not immediately available. If the mutex is already
-		// locked, the thread will have to wait. This is a
-		// potential deadlock situation.
-		if (m->locked) {
-			if (deadlock_detect(NTHREAD, p->next_mutex_id,
-				 p->mutex_avail, p->mutex_alloc, p->mutex_req)) {
-				p->mutex_req[t->tid][mutex_id] = 0;
-				return -0xDEAD;
-			}
+	if (!p->deadlock_detect_enabled)
+		goto acquire_lock;
+
+	p->mutex_req[t->tid][mutex_id] = 1;
+	// Check for potential deadlock ONLY if the resource is
+	// not immediately available. If the mutex is already
+	// locked, the thread will have to wait. This is a
+	// potential deadlock situation.
+	if (m->locked) {
+		if (deadlock_detect(NTHREAD, p->next_mutex_id,
+			 p->mutex_avail, p->mutex_alloc, p->mutex_req)) {
+			p->mutex_req[t->tid][mutex_id] = 0;
+			return -0xDEAD;
 		}
 	}
 
+acquire_lock:
 	mutex_lock(m);
 
-	// Update state matrices after successfully acquiring the lock.
-	if (p->deadlock_detect_enabled) {
-		// The request has been fulfilled, clear it now.
-		p->mutex_req[t->tid][mutex_id] = 0;
-		// Now the resource is allocated to this thread.
-		p->mutex_alloc[t->tid][mutex_id] = 1;
-		// It's unavailable now.
-		p->mutex_avail[mutex_id] = 0;
-	}
+	if (!p->deadlock_detect_enabled)
+		goto ret;
 
+	// Update state matrices after successfully acquiring the lock.
+	// The request has been fulfilled, clear it now.
+	p->mutex_req[t->tid][mutex_id] = 0;
+	// Now the resource is allocated to this thread.
+	p->mutex_alloc[t->tid][mutex_id] = 1;
+	// It's unavailable now.
+	p->mutex_avail[mutex_id] = 0;
+
+ret:
 	return 0;
 }
 
@@ -444,32 +448,36 @@ int sys_semaphore_down(int semaphore_id)
 	struct thread *t = curr_thread();
 	struct semaphore *s = &p->semaphore_pool[semaphore_id];
 
-	if (p->deadlock_detect_enabled) {
-		p->sem_req[t->tid][semaphore_id] = 1;
-		// Check for potential deadlock if the thread might wait.
-		// A thread will wait if the semaphore count is not positive.
-		if (s->count <= 0) {
-			if (deadlock_detect(NTHREAD, p->next_semaphore_id,
-					p->sem_avail, p->sem_alloc, p->sem_req)) {
-				// Cancel the request.
-				p->sem_req[t->tid][semaphore_id] = 0;
-				return -0xDEAD;
-			}
+	if (!p->deadlock_detect_enabled)
+		goto acquire_sem;
+
+	p->sem_req[t->tid][semaphore_id] = 1;
+	// Check for potential deadlock if the thread might wait.
+	// A thread will wait if the semaphore count is not positive.
+	if (s->count <= 0) {
+		if (deadlock_detect(NTHREAD, p->next_semaphore_id,
+			 p->sem_avail, p->sem_alloc, p->sem_req)) {
+			// Cancel the request.
+			p->sem_req[t->tid][semaphore_id] = 0;
+			return -0xDEAD;
 		}
 	}
 
+acquire_sem:
 	semaphore_down(s);
 
-	// Update state matrices after successfully acquiring the resource.
-	if (p->deadlock_detect_enabled) {
-		// The request has been fulfilled, clear it now.
-		p->sem_req[t->tid][semaphore_id] = 0;
-		// Increase the thread's allocation of this resource.
-		p->sem_alloc[t->tid][semaphore_id]++;
-		// Decrease the thread's available of this resource.
-		p->sem_avail[semaphore_id]--;
-	}
+	if (!p->deadlock_detect_enabled)
+		goto ret;
 
+	// Update state matrices after successfully acquiring the resource.
+	// The request has been fulfilled, clear it now.
+	p->sem_req[t->tid][semaphore_id] = 0;
+	// Increase the thread's allocation of this resource.
+	p->sem_alloc[t->tid][semaphore_id]++;
+	// Decrease the thread's available of this resource.
+	p->sem_avail[semaphore_id]--;
+
+ret:
 	return 0;
 }
 
