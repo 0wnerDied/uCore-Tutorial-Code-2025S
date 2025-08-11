@@ -248,7 +248,60 @@ int sys_waittid(int tid)
 *						const int request[NTHREAD][LOCK_POOL_SIZE])
 *				for both mutex and semaphore detect, you can also
 *				use this idea or just ignore it.
+*	@thread_cnt:	The total number of threads in the system.
+*	@resource_cnt:	The total number of resource types, this corresponds
+					to the number of currently created mutexes or
+					semaphores (e.g., p->next_mutex_id).
 */
+int deadlock_detect(int thread_cnt,
+		 int resource_cnt, int *avail,
+		 int alloc[NTHREAD][LOCK_POOL_SIZE],
+		 int req[NTHREAD][LOCK_POOL_SIZE])
+{
+	// Initialize Work and Finish arrays.
+	int work[LOCK_POOL_SIZE], finish[NTHREAD];
+
+	for (int j = 0; j < resource_cnt; j++)
+		work[j] = avail[j];
+	for (int i = 0; i < thread_cnt; i++)
+		finish[i] = 0;
+
+	// Find a thread that can finish and release its resources.
+	while (1) {
+		int found = 0;
+		for (int i = 0; i < thread_cnt; i++) {
+			// Find a thread [i] which is not finished and its request can be satisfied
+			if (finish[i] == 0) {
+				int unsatisfied = 0;
+				for (int j = 0; j < resource_cnt; j++) {
+					if (req[i][j] > work[j]) {
+						unsatisfied = 1;
+						break;
+					}
+				}
+				// If found, pretend to release its resources
+				if (!unsatisfied) {
+					for (int j = 0; j < resource_cnt; j++)
+						work[j] += alloc[i][j];
+					finish[i] = 1;
+					found = 1;
+				}
+			}
+		}
+		// If no such thread was found in a full pass, exit the loop
+		if (!found)
+			break;
+	}
+
+	// Check if all threads are finished.
+	for (int i = 0; i < thread_cnt; i++) {
+		if (finish[i] == 0)
+			// If any thread cannot finish, the system is in an unsafe state, detect deadlock.
+			return 1;
+	}
+
+	return 0;
+}
 
 int sys_mutex_create(int blocking)
 {
