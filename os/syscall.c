@@ -362,6 +362,17 @@ int sys_condvar_wait(int cond_id, int mutex_id)
 }
 
 // LAB5: (2) you may need to define function enable_deadlock_detect here
+int sys_enable_deadlock_detect(int is_enable)
+{
+	if (is_enable != 0 && is_enable != 1)
+		return -1;
+
+	struct proc *p = curr_proc();
+
+	p->deadlock_detect_enabled = is_enable;
+
+	return 0;
+}
 
 extern char trap_page[];
 
@@ -455,6 +466,9 @@ void syscall()
 		ret = sys_condvar_wait(args[0], args[1]);
 		break;
 	// LAB5: (2) you may need to add case SYS_enable_deadlock_detect here
+	case SYS_enable_deadlock_detect:
+		ret = sys_enable_deadlock_detect(args[0]);
+		break;
 	default:
 		ret = -1;
 		errorf("unknown syscall %d", id);
