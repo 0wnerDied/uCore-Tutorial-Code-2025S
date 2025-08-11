@@ -311,7 +311,14 @@ int sys_mutex_create(int blocking)
 		return -1;
 	}
 	// LAB5: (4-1) You may want to maintain some variables for detect here
-	int mutex_id = m - curr_proc()->mutex_pool;
+	struct proc *p = curr_proc();
+	int mutex_id = m - p->mutex_pool;
+
+	// If deadlock detection is enabled, initialize
+	// the state for this new resource.
+	if (p->deadlock_detect_enabled)
+		p->mutex_avail[mutex_id] = 1;
+
 	debugf("create mutex %d", mutex_id);
 	return mutex_id;
 }
@@ -324,7 +331,37 @@ int sys_mutex_lock(int mutex_id)
 	}
 	// LAB5: (4-1) You may want to maintain some variables for detect
 	//       or call your detect algorithm here
-	mutex_lock(&curr_proc()->mutex_pool[mutex_id]);
+	struct proc *p = curr_proc();
+	struct thread *t = curr_thread();
+	struct mutex *m = &p->mutex_pool[mutex_id];
+
+	if (p->deadlock_detect_enabled) {
+		p->mutex_req[t->tid][mutex_id] = 1;
+		// Check for potential deadlock ONLY if the resource is
+		// not immediately available. If the mutex is already
+		// locked, the thread will have to wait. This is a
+		// potential deadlock situation.
+		if (m->locked) {
+			if (deadlock_detect(NTHREAD, p->next_mutex_id,
+				 p->mutex_avail, p->mutex_alloc, p->mutex_req)) {
+				p->mutex_req[t->tid][mutex_id] = 0;
+				return -0xDEAD;
+			}
+		}
+	}
+
+	mutex_lock(m);
+
+	// Update state matrices after successfully acquiring the lock.
+	if (p->deadlock_detect_enabled) {
+		// The request has been fulfilled, clear it now.
+		p->mutex_req[t->tid][mutex_id] = 0;
+		// Now the resource is allocated to this thread.
+		p->mutex_alloc[t->tid][mutex_id] = 1;
+		// It's unavailable now.
+		p->mutex_avail[mutex_id] = 0;
+	}
+
 	return 0;
 }
 
@@ -335,7 +372,19 @@ int sys_mutex_unlock(int mutex_id)
 		return -1;
 	}
 	// LAB5: (4-1) You may want to maintain some variables for detect here
-	mutex_unlock(&curr_proc()->mutex_pool[mutex_id]);
+	struct proc *p = curr_proc();
+	struct thread *t = curr_thread();
+
+	// Update state matrices to reflect the resource release.
+	if (p->deadlock_detect_enabled) {
+		// No longer holds the resource. Clear it.
+		p->mutex_alloc[t->tid][mutex_id] = 0;
+		// Now it's available.
+		p->mutex_avail[mutex_id] = 1;
+	}
+
+	mutex_unlock(&p->mutex_pool[mutex_id]);
+
 	return 0;
 }
 
