@@ -396,7 +396,14 @@ int sys_semaphore_create(int res_count)
 		return -1;
 	}
 	// LAB5: (4-2) You may want to maintain some variables for detect here
-	int sem_id = s - curr_proc()->semaphore_pool;
+	struct proc *p = curr_proc();
+	int sem_id = s - p->semaphore_pool;
+
+	// If deadlock detection is enabled,
+	// initialize the state for this new resource.
+	if (p->deadlock_detect_enabled)
+		p->sem_avail[sem_id] = res_count;
+
 	debugf("create semaphore %d", sem_id);
 	return sem_id;
 }
@@ -409,7 +416,18 @@ int sys_semaphore_up(int semaphore_id)
 		return -1;
 	}
 	// LAB5: (4-2) You may want to maintain some variables for detect here
-	semaphore_up(&curr_proc()->semaphore_pool[semaphore_id]);
+	struct proc *p = curr_proc();
+	struct thread *t = curr_thread();
+
+	// Update state matrices to reflect V operation.
+	if (p->deadlock_detect_enabled) {
+		// To release a semaphore, decrease the thread's allocation of this resource.
+		p->sem_alloc[t->tid][semaphore_id]--;
+		// Consequently, the number of available instances of this resource increases.
+		p->sem_avail[semaphore_id]++;
+	}
+
+	semaphore_up(&p->semaphore_pool[semaphore_id]);
 	return 0;
 }
 
@@ -422,7 +440,36 @@ int sys_semaphore_down(int semaphore_id)
 	}
 	// LAB5: (4-2) You may want to maintain some variables for detect
 	//       or call your detect algorithm here
-	semaphore_down(&curr_proc()->semaphore_pool[semaphore_id]);
+	struct proc *p = curr_proc();
+	struct thread *t = curr_thread();
+	struct semaphore *s = &p->semaphore_pool[semaphore_id];
+
+	if (p->deadlock_detect_enabled) {
+		p->sem_req[t->tid][semaphore_id] = 1;
+		// Check for potential deadlock if the thread might wait.
+		// A thread will wait if the semaphore count is not positive.
+		if (s->count <= 0) {
+			if (deadlock_detect(NTHREAD, p->next_semaphore_id,
+					p->sem_avail, p->sem_alloc, p->sem_req)) {
+				// Cancel the request.
+				p->sem_req[t->tid][semaphore_id] = 0;
+				return -0xDEAD;
+			}
+		}
+	}
+
+	semaphore_down(s);
+
+	// Update state matrices after successfully acquiring the resource.
+	if (p->deadlock_detect_enabled) {
+		// The request has been fulfilled, clear it now.
+		p->sem_req[t->tid][semaphore_id] = 0;
+		// Increase the thread's allocation of this resource.
+		p->sem_alloc[t->tid][semaphore_id]++;
+		// Decrease the thread's available of this resource.
+		p->sem_avail[semaphore_id]--;
+	}
+
 	return 0;
 }
 
